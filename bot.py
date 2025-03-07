@@ -1,40 +1,42 @@
-from telegram.ext import Updater, CommandHandler
-import pymongo
 import os
+import pymongo
+import telebot
 from datetime import datetime, timedelta
 
-# Environment Variables
-TOKEN = os.getenv("BOT_TOKEN")
-MONGO_URI = os.getenv("MONGO_URI")
+# 🔹 Telegram Bot Token
+BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
-# MongoDB Connection
-client = pymongo.MongoClient(MONGO_URI)
-db = client["traffic_db"]
-collection = db["traffic"]
+# 🔹 MongoDB Connection
+MONGO_URL = "YOUR_MONGODB_CONNECTION_STRING"
+client = pymongo.MongoClient(MONGO_URL)
+db = client["traffic_db"]  # Database Name
+collection = db["visitors"]  # Collection Name
 
-def visits(update, context):
-    today = datetime.utcnow()
-    last_2_days = today - timedelta(days=2)
-    last_3_days = today - timedelta(days=3)
+# 🔹 Initialize Bot
+bot = telebot.TeleBot(BOT_TOKEN)
 
-    two_days_count = collection.count_documents({"timestamp": {"$gte": last_2_days}})
-    three_days_count = collection.count_documents({"timestamp": {"$gte": last_3_days}})
+# ✅ /live Command Handler
+@bot.message_handler(commands=['live'])
+def send_live_visitors(message):
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    visitors = collection.find({"timestamp": {"$gte": today}})  # आज के Visitors Filter
 
-    message = (
-        f"📊 *Website Insights*\n\n"
-        f"🗓 *Last 2 Days:* {two_days_count} visits\n"
-        f"🗓 *Last 3 Days:* {three_days_count} visits\n"
-    )
+    visitor_list = []
+    for visitor in visitors:
+        name = visitor.get("name", "Unknown")
+        country = visitor.get("country", "Unknown")
+        state = visitor.get("state", "Unknown")
+        visit_time = visitor["timestamp"].strftime("%H:%M:%S")  # Time in HH:MM:SS
+        
+        visitor_list.append(f"👤 {name} | 🌍 {country}, {state} | 🕒 {visit_time}")
 
-    update.message.reply_text(message, parse_mode="Markdown")
+    if visitor_list:
+        response = "**📊 Today's Live Visitors:**\n\n" + "\n".join(visitor_list)
+    else:
+        response = "🚫 कोई भी Visitor अभी तक नहीं आया।"
 
-def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("visits", visits))
+    bot.send_message(message.chat.id, response, parse_mode="Markdown")
 
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+# 🔹 Start Bot
+bot.polling()
